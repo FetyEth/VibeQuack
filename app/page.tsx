@@ -67,8 +67,8 @@ export default function AgentChat() {
     }
   };
 
-  // --- API CALLER ---
-const callAgent = async (action: string, payload: any) => {
+  // --- API CALLER WITH Q402 ---
+  const callAgent = async (action: string, payload: any) => {
     if (!userAddress) {
       setMessages(prev => [...prev, { role: "agent", content: "⚠️ Please connect wallet first." }]);
       return { success: false, error: "No wallet" };
@@ -88,21 +88,19 @@ const callAgent = async (action: string, payload: any) => {
         }),
       });
 
-      // 2. Q402 INTERCEPTION (The Magic)
+      // 2. Q402 PAYMENT INTERCEPTION
       if (res.status === 402) {
-        console.log("💰 402 Received. Triggering Q402 Flow...");
         const data = await res.json();
         const details = data.paymentDetails;
         
-        // Notify User
         addLog("Q402 Payment Required", "Pending");
-        setMessages(prev => [...prev, { role: "agent", content: `💰 Q402 PAYMENT REQUEST.\n\nService: ${action.toUpperCase()}\nFee: ${details.amount} wei\n\nPlease sign the request...` }]);
+        setMessages(prev => [...prev, { role: "agent", content: `💰 Q402 PAYMENT REQUEST.\n\nService: ${action.toUpperCase()}\nFee: ${details.amount} wei\n\nPlease sign EIP-712 Witness...` }]);
 
-        // 3. Sign EIP-712
+        // 3. Trigger Wallet Signature (Q402 Client)
         const xPaymentHeader = await createPaymentHeader(userAddress, details);
         addLog("Payment Signed", "Success");
         
-        // 4. Retry with Payment Header
+        // 4. Retry Request with X-PAYMENT Header
         res = await fetch("/api/agent", {
             method: "POST",
             headers: { 
@@ -118,7 +116,6 @@ const callAgent = async (action: string, payload: any) => {
         });
       }
 
-      // 5. Parse Final Response
       if (!res.ok) {
           const errData = await res.json();
           throw new Error(errData.error || "Request Failed");
@@ -129,16 +126,16 @@ const callAgent = async (action: string, payload: any) => {
       return finalData;
 
     } catch (e: any) {
-      console.error(e);
       setLoading(false);
       if (e.code === 4001) {
-          setMessages(prev => [...prev, { role: "agent", content: "❌ Signature Rejected." }]);
+          setMessages(prev => [...prev, { role: "agent", content: "❌ You rejected the Q402 Signature." }]);
       } else {
           setMessages(prev => [...prev, { role: "agent", content: `❌ Error: ${e.message}` }]);
       }
       return { success: false, error: e.message };
     }
   };
+
   // --- HANDLERS ---
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -256,18 +253,11 @@ const callAgent = async (action: string, payload: any) => {
           <div className="flex justify-between items-center mb-4">
             <div className="flex items-center gap-3">
               <span className="text-xl font-bold tracking-wider">🦆 VIBE QUACK AGENT</span>
-              {/* TOGGLE */}
-              <button 
-                onClick={() => setIsMainnet(!isMainnet)}
-                className={`text-[10px] px-2 py-1 rounded text-white font-bold transition-all ${
-                  isMainnet ? "bg-red-600 animate-pulse shadow-[0_0_10px_red]" : "bg-gray-700"
-                }`}
-              >
+              <button onClick={() => setIsMainnet(!isMainnet)} className={`text-[10px] px-2 py-1 rounded text-white font-bold transition-all ${isMainnet ? "bg-red-600 animate-pulse shadow-[0_0_10px_red]" : "bg-gray-700"}`}>
                 {isMainnet ? "🔴 MAINNET" : "🟢 TESTNET"}
               </button>
             </div>
             
-            {/* WALLET */}
             {!userAddress ? (
               <button onClick={connectWallet} className="bg-white text-black px-4 py-1 rounded font-bold text-sm hover:opacity-80 transition-colors">
                 CONNECT WALLET
@@ -282,34 +272,21 @@ const callAgent = async (action: string, payload: any) => {
 
           {/* MODE TABS */}
           <div className="flex gap-2">
-            <button 
-              onClick={() => setMode("architect")}
-              className={`flex-1 py-2 font-bold text-sm rounded transition-all ${mode === "architect" ? "bg-green-700 text-black shadow-lg" : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}
-            >
-              🛠️ ARCHITECT (Generate & Deploy)
-            </button>
-            <button 
-              onClick={() => setMode("researcher")}
-              className={`flex-1 py-2 font-bold text-sm rounded transition-all ${mode === "researcher" ? "bg-blue-600 text-black shadow-lg" : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}
-            >
-              🧠 RESEARCHER (Explain & Analyze)
-            </button>
+            <button onClick={() => setMode("architect")} className={`flex-1 py-2 font-bold text-sm rounded transition-all ${mode === "architect" ? "bg-green-700 text-black shadow-lg" : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}>🛠️ ARCHITECT (Generate & Deploy)</button>
+            <button onClick={() => setMode("researcher")} className={`flex-1 py-2 font-bold text-sm rounded transition-all ${mode === "researcher" ? "bg-blue-600 text-black shadow-lg" : "bg-gray-800 text-gray-500 hover:bg-gray-700"}`}>🧠 RESEARCHER (Explain & Analyze)</button>
           </div>
         </div>
 
-        {/* MESSAGES AREA */}
-        <div className="flex-grow overflow-y-auto space-y-4 pr-2 pb-4 scrollbar-hide h-[60vh]">
+        {/* MESSAGES AREA (CHAT BOX) */}
+        <div className="flex-grow overflow-y-auto space-y-4 pr-2 pb-4 scrollbar-hide h-[50vh]">
           {messages.map((m, i) => (
             <div key={i} className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}>
               <div className={`max-w-[85%] p-3 rounded-lg whitespace-pre-wrap ${m.role === "user" ? `${t.bg} text-white` : "bg-black border border-gray-800"}`}>
                 {m.content}
               </div>
               
-              {/* --- CODE & PREVIEW BLOCK --- */}
               {m.type === "code" && m.rawCode && (
                 <div className="mt-2 w-[85%] bg-gray-900 border border-gray-700 p-3 rounded text-xs text-gray-300">
-                   
-                   {/* HUMAN READABLE PREVIEW */}
                    <div className="mb-4 bg-black border border-gray-800 p-3 rounded">
                       <p className={`${t.text} font-bold border-b border-gray-800 mb-2 pb-1`}>📝 TRANSACTION PREVIEW</p>
                       <div className="grid grid-cols-2 gap-y-1 gap-x-4 text-gray-400">
@@ -320,68 +297,37 @@ const callAgent = async (action: string, payload: any) => {
                          <span>Est. Cost:</span> <span className="text-yellow-500">~0.003 BNB (Sponsored)</span>
                       </div>
                    </div>
-
-                   {/* RAW CODE TOGGLE */}
                    <details>
                       <summary className="cursor-pointer text-gray-500 hover:text-white mb-2 select-none">View Raw Solidity Source</summary>
                       <pre className="overflow-x-auto p-2 bg-black rounded border border-gray-800 text-[10px]">{m.rawCode}</pre>
                    </details>
-
-                   {/* ACTION BUTTONS */}
                    <div className="mt-4 flex gap-3">
-                     <button onClick={handleAudit} className="flex-1 bg-yellow-700 hover:bg-yellow-600 text-white py-2 rounded font-bold transition-colors">
-                       🛡️ AUDIT (Recommended)
-                     </button>
-                     <button onClick={handleDeploy} className="flex-1 bg-red-800 hover:bg-red-600 text-white py-2 rounded font-bold transition-colors">
-                       🚀 DEPLOY NOW
-                     </button>
+                     <button onClick={handleAudit} className="flex-1 bg-yellow-700 hover:bg-yellow-600 text-white py-2 rounded font-bold transition-colors">🛡️ AUDIT (Recommended)</button>
+                     <button onClick={handleDeploy} className="flex-1 bg-red-800 hover:bg-red-600 text-white py-2 rounded font-bold transition-colors">🚀 DEPLOY NOW</button>
                    </div>
                 </div>
               )}
               
-              {/* --- AUDIT REPORT BLOCK --- */}
               {m.type === "report" && (
                 <div className="mt-2 w-[85%] border-l-4 border-yellow-500 pl-4 bg-yellow-900 bg-opacity-10 p-2 rounded">
                   <p className="text-yellow-500 font-bold mb-2">🛡️ SECURITY AUDIT FINDINGS:</p>
                   <p className="text-xs text-gray-300 mb-4 whitespace-pre-wrap max-h-40 overflow-y-auto">{m.content}</p>
-                  <button onClick={handleDeploy} className="bg-green-700 hover:bg-green-600 text-white px-6 py-2 rounded font-bold w-full transition-colors">
-                    ✅ APPROVED - PROCEED TO DEPLOY
-                  </button>
+                  <button onClick={handleDeploy} className="bg-green-700 hover:bg-green-600 text-white px-6 py-2 rounded font-bold w-full transition-colors">✅ APPROVED - PROCEED TO DEPLOY</button>
                 </div>
               )}
 
-              {/* --- DEPLOY SUCCESS / FUND BLOCK --- */}
               {m.type === "deployed" && (
                 <div className="mt-2 w-[85%] bg-green-900 bg-opacity-20 border border-green-500 p-3 rounded animate-fade-in">
                   <div className="flex gap-2 mt-4">
-                    <button 
-                      onClick={() => handleFund(m.rawCode!)} 
-                      className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded font-bold transition-colors flex items-center justify-center gap-2"
-                    >
-                      💸 FUND CONTRACT (0.001 BNB)
-                    </button>
-                    <a 
-                      href={m.content.match(/https:\/\/[^\s]+/)?.[0]} 
-                      target="_blank" 
-                      rel="noreferrer"
-                      className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded font-bold text-center flex items-center justify-center gap-2"
-                    >
-                      🔍 VIEW ON SCAN
-                    </a>
+                    <button onClick={() => handleFund(m.rawCode!)} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white py-2 rounded font-bold transition-colors flex items-center justify-center gap-2">💸 FUND CONTRACT (0.001 BNB)</button>
+                    <a href={m.content.match(/https:\/\/[^\s]+/)?.[0]} target="_blank" rel="noreferrer" className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-2 rounded font-bold text-center flex items-center justify-center gap-2">🔍 VIEW ON SCAN</a>
                   </div>
                 </div>
               )}
-
             </div>
           ))}
           
-          {loading && (
-             <div className="flex justify-start">
-               <div className="bg-black border border-gray-800 p-3 rounded-lg animate-pulse flex items-center gap-2">
-                 <span className="animate-spin">⚙️</span> Agent is working...
-               </div>
-             </div>
-          )}
+          {loading && <div className="flex justify-start"><div className="bg-black border border-gray-800 p-3 rounded-lg animate-pulse flex items-center gap-2"><span className="animate-spin">⚙️</span> Agent is working...</div></div>}
           <div ref={scrollRef} />
         </div>
 
@@ -395,14 +341,29 @@ const callAgent = async (action: string, payload: any) => {
             onKeyDown={(e) => e.key === "Enter" && handleSend()}
             disabled={loading || !userAddress || !!pendingCode}
           />
-          <button 
-            onClick={handleSend} 
-            disabled={loading || !userAddress || !!pendingCode} 
-            className={`${t.btn} text-white px-8 rounded font-bold hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed transition-all`}
-          >
-            SEND
-          </button>
+          <button onClick={handleSend} disabled={loading || !userAddress || !!pendingCode} className={`${t.btn} text-white px-8 rounded font-bold hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed transition-all`}>SEND</button>
         </div>
+
+        {/* --- TITAN MODE FOOTER (THE BILLBOARD) --- */}
+        <div className="mt-8 flex flex-col items-center gap-3 select-none">
+           <span className="text-[10px] text-gray-500 uppercase tracking-[0.3em] font-bold opacity-80">
+             ⚡ Powered by Ecosystem Partners ⚡
+           </span>
+           <div className="flex items-center gap-4">
+             {/* ChainGPT Badge */}
+             <div className="flex items-center gap-3 bg-gray-900 border-2 border-blue-800 px-5 py-2.5 rounded-lg shadow-[0_0_20px_rgba(59,130,246,0.4)] animate-pulse hover:shadow-[0_0_35px_rgba(59,130,246,0.7)] hover:border-blue-500 transition-all duration-300 cursor-help group hover:-translate-y-1">
+               <img src="https://res.cloudinary.com/dfmuypa1k/image/upload/v1765103401/ChainGPTLogo.png" alt="ChainGPT" className="h-6 w-auto drop-shadow-[0_0_5px_rgba(59,130,246,1)]" />
+               <span className="text-sm font-extrabold text-blue-400 group-hover:text-white font-sans tracking-wide">ChainGPT</span>
+             </div>
+             <span className="text-lg text-gray-600 font-thin">✕</span>
+             {/* Quack Badge */}
+             <div className="flex items-center gap-3 bg-gray-900 border-2 border-green-800 px-5 py-2.5 rounded-lg shadow-[0_0_20px_rgba(34,197,94,0.4)] animate-pulse hover:shadow-[0_0_35px_rgba(34,197,94,0.7)] hover:border-green-500 transition-all duration-300 cursor-help group hover:-translate-y-1">
+               <span className="text-2xl filter drop-shadow-[0_0_5px_rgba(34,197,94,1)]">🦆</span>
+               <span className="text-sm font-extrabold text-green-500 group-hover:text-white tracking-wide">Quack x402</span>
+             </div>
+           </div>
+        </div>
+
       </div>
 
       {/* --- RIGHT: ACTIVITY LOG --- */}
@@ -417,12 +378,7 @@ const callAgent = async (action: string, payload: any) => {
                <div key={i} className="flex flex-col border-b border-gray-800 pb-2 last:border-0">
                   <div className="flex justify-between text-gray-500 mb-1">
                      <span className="font-mono">{log.time}</span>
-                     <span className={`font-bold ${
-                        log.status === "Success" ? "text-green-400" : 
-                        log.status === "Failed" ? "text-red-400" : "text-yellow-400"
-                     }`}>
-                        {log.status.toUpperCase()}
-                     </span>
+                     <span className={`font-bold ${log.status === "Success" ? "text-green-400" : log.status === "Failed" ? "text-red-400" : "text-yellow-400"}`}>{log.status.toUpperCase()}</span>
                   </div>
                   <span className="text-gray-300 font-medium">{log.action}</span>
                </div>

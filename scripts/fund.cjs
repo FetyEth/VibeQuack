@@ -2,18 +2,11 @@
 const hre = require("hardhat");
 async function main() {
   const [signer] = await hre.ethers.getSigners();
-  console.log("Sender:", signer.address);
-  
   const tx = await signer.sendTransaction({
-    to: "0xD852e89873Cebda2712348EF32858BaECf06dbd4",
+    to: "0x86d256bc8dDb3af0F4b9050d4F45945553168B3e",
     value: hre.ethers.parseEther("0.001")
   });
-  
-  console.log("Waiting for blocks...");
   await tx.wait();
   console.log("TxHash:", tx.hash);
 }
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+main().catch(console.error);
