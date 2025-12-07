@@ -86,7 +86,7 @@ The Agent has its own treasury (`PRIVATE_KEY`) but is governed by strict code po
 
 1.  **Clone the Repo**
     ```bash
-    git clone https://github.com/your-username/vibe-quack.git
+    git clone https://github.com/its-mc/VibeQuack.git
     cd vibe-quack
     ```
 
