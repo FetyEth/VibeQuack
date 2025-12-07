@@ -4,6 +4,7 @@ import path from "path";
 import { exec } from "child_process";
 import util from "util";
 
+
 const execAsync = util.promisify(exec);
 
 // --- CONFIG ---
@@ -12,9 +13,16 @@ const API_URL = "https://api.chaingpt.org/chat/stream";
 const RPC_TESTNET = "https://data-seed-prebsc-1-s1.binance.org:8545/";
 const RPC_MAINNET = "https://bsc-dataseed.binance.org/";
 
+
+
+function addressToUUID(address: string) {
+  const clean = address.replace("0x", "").toLowerCase().padEnd(32, "0");
+  return `${clean.slice(0, 8)}-${clean.slice(8, 12)}-${clean.slice(12, 16)}-${clean.slice(16, 20)}-${clean.slice(20, 32)}`;
+}
+
 export async function POST(req: Request) {
   try {
-    const { action, prompt, code, userAddress, network } = await req.json();
+    const { action, prompt, code, userAddress, network, toAddress, amount } = await req.json();
 
     if (!API_KEY) return NextResponse.json({ error: "Server Error: Missing ChainGPT API Key." }, { status: 500 });
 
@@ -41,7 +49,7 @@ export async function POST(req: Request) {
           model: "general_assistant", // <--- THE RESEARCH MODEL
           question: prompt,
           chatHistory: "on",
-          sdkUniqueId: userAddress
+          sdkUniqueId: addressToUUID(userAddress)
         })
       });
 
@@ -71,10 +79,11 @@ export async function POST(req: Request) {
           Create a contract named 'GenContract'. 
           IMPORTANT: Hardcode all values (name, symbol, supply) directly in the code. 
           DO NOT require constructor arguments. 
+          REQUIRED: Include 'receive() external payable {}' so the contract can accept BNB.
           Ensure Solidity ^0.8.20. 
           User Prompt: ${prompt}`,
           chatHistory: "on",
-          sdkUniqueId: userAddress
+          sdkUniqueId: addressToUUID(userAddress)
         })
       });
 
@@ -137,6 +146,49 @@ export async function POST(req: Request) {
       const address = match ? match[1] : "Error: Address not found";
 
       return NextResponse.json({ success: true, address, logs: stdout });
+    }
+
+     // ACTION 4: TRANSFER (Fund Contract)
+    // =========================================================
+    if (action === "transfer") {
+        console.log(`💸 Funding Contract: ${toAddress} with ${amount} BNB`);
+
+      const networkFlag = network === "mainnet" ? "bscMainnet" : "bscTestnet";
+
+      // 1. Write a temporary transfer script
+      const scriptContent = `
+const hre = require("hardhat");
+async function main() {
+  const [signer] = await hre.ethers.getSigners();
+  console.log("Sender:", signer.address);
+  
+  const tx = await signer.sendTransaction({
+    to: "${toAddress}",
+    value: hre.ethers.parseEther("${amount}")
+  });
+  
+  console.log("Waiting for blocks...");
+  await tx.wait();
+  console.log("TxHash:", tx.hash);
+}
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+`;
+      const scriptPath = path.join(process.cwd(), "scripts", "fund.cjs");
+      fs.writeFileSync(scriptPath, scriptContent);
+
+      // 2. Execute
+      try {
+        const { stdout } = await execAsync(`npx hardhat run scripts/fund.cjs --network ${networkFlag}`);
+        const match = stdout.match(/TxHash: (0x[a-fA-F0-9]{64})/);
+        const txHash = match ? match[1] : "hash-not-found";
+        
+        return NextResponse.json({ success: true, txHash });
+      } catch (error: any) {
+        return NextResponse.json({ error: error.message || "Transfer Failed" }, { status: 500 });
+      }
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
