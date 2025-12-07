@@ -10,10 +10,13 @@
   },
   "dependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
+    "axios": "1.13.2",
     "hardhat": "^2.27.1",
     "next": "16.0.7",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "socket.io": "4.8.1",
+    "socket.io-client": "4.8.1",
     "uuid": "^13.0.0",
     "viem": "^2.41.2"
   },
